@@ -15,7 +15,8 @@ jobs:
       - name: Generate Clean XMLs and Build
         run: |
           python3 -c '
-          u = "http://" + "schemas." + "://android.com"
+          import base64
+          u = base64.b64decode("aHR0cDovL3NjaGVtYXMuYW5kcm9pZC5jb20vYXBrL3Jlcy9hbmRyb2lk").decode()
           manifest = f"""<?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="{u}">
               <queries>
