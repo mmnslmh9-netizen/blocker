@@ -12,9 +12,51 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
-      - name: Build Debug APK
+      - name: Generate Clean XMLs and Build
         run: |
-          sed -i 's|http://android.com|http://android.com|g' app/src/main/AndroidManifest.xml
+          python3 -c '
+          u = "http://" + "schemas." + "://android.com"
+          manifest = f"""<?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="{u}">
+              <queries>
+                  <intent>
+                      <action android:name="android.intent.action.MAIN" />
+                      <category android:name="android.intent.category.LAUNCHER" />
+                  </intent>
+              </queries>
+              <application
+                  android:label="חוסם תכנים"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <activity
+                      android:name=".BlockActivity"
+                      android:exported="false"
+                      android:excludeFromRecents="true"
+                      android:launchMode="singleTask" />
+                  <service
+                      android:name=".BlockerService"
+                      android:exported="true"
+                      android:label="חוסם תכנים"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.accessibilityservice"
+                          android:resource="@xml/accessibility_service_config" />
+                  </service>
+              </application>
+          </manifest>"""
+          open("app/src/main/AndroidManifest.xml", "w").write(manifest)
+          '
           gradle assembleDebug
       - uses: actions/upload-artifact@v4
         with:
