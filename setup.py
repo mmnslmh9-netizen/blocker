@@ -1,6 +1,18 @@
-import base64
+import base64, os, shutil
 
 u = base64.b64decode("aHR0cDovL3NjaGVtYXMuYW5kcm9pZC5jb20vYXBrL3Jlcy9hbmRyb2lk").decode()
+os.makedirs("app/src/main/res/drawable", exist_ok=True)
+
+if os.path.exists("poster.jpg"):
+    shutil.copy("poster.jpg", "app/src/main/res/drawable/splash_img.jpg")
+
+icon_xml = f'''<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="{u}" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#060B19" android:pathData="M0,0h108v108h-108z"/>
+    <path android:fillColor="#003566" android:strokeColor="#00D2FF" android:strokeWidth="3.5" android:pathData="M54,18 L82,30 V54 C82,73 69,86 54,92 C39,86 26,73 26,54 V30 Z"/>
+    <path android:fillColor="#0077B6" android:pathData="M54,24 L76,34 V54 C76,69 65,80 54,85 C43,80 32,69 32,54 V34 Z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M54,43 A6,6 0 1,0 54,55 A6,6 0 1,0 54,43 Z M50,53 L58,53 L60,67 L48,67 Z"/>
+</vector>'''
 
 manifest = f'''<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="{u}">
@@ -11,15 +23,17 @@ manifest = f'''<?xml version="1.0" encoding="utf-8"?>
         </intent>
     </queries>
     <application
+        android:icon="@drawable/ic_launcher"
         android:label="חוסם תכנים"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".SplashActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".MainActivity" android:exported="true" />
         <activity android:name=".BlockActivity" android:exported="false" android:excludeFromRecents="true" android:launchMode="singleTask" />
         <service android:name=".BlockerService" android:exported="true" android:label="חוסם תכנים" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
@@ -35,6 +49,41 @@ manifest = f'''<?xml version="1.0" encoding="utf-8"?>
         </receiver>
     </application>
 </manifest>'''
+
+splash_kt = '''package com.chosem.blocker
+import android.app.Activity
+import android.content.Intent
+import android.graphics.Color
+import android.os.*
+import android.view.Gravity
+import android.widget.*
+
+class SplashActivity : Activity() {
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        val resId = resources.getIdentifier("splash_img", "drawable", packageName)
+        if (resId != 0) {
+            val iv = ImageView(this).apply {
+                setImageResource(resId)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(Color.parseColor("#060B19"))
+            }
+            setContentView(iv)
+        } else {
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(Color.parseColor("#060B19"))
+                gravity = Gravity.CENTER
+            }
+            r.addView(ImageView(this).apply { setImageResource(R.drawable.ic_launcher) }, LinearLayout.LayoutParams(320, 320))
+            setContentView(r)
+        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            startActivity(Intent(this, MainActivity::class.java))
+            finish()
+        }, 1800)
+    }
+}'''
 
 acc = f'''<?xml version="1.0" encoding="utf-8"?>
 <accessibility-service xmlns:android="{u}"
@@ -177,10 +226,7 @@ class BlockActivity : Activity() {
     override fun onBackPressed() { moveTaskToBack(true); finish() }
 }'''
 
+open("app/src/main/res/drawable/ic_launcher.xml", "w").write(icon_xml)
 open("app/src/main/AndroidManifest.xml", "w").write(manifest)
 open("app/src/main/res/xml/accessibility_service_config.xml", "w").write(acc)
 open("app/src/main/res/xml/device_admin.xml", "w").write(admin_xml)
-open("app/src/main/java/com/chosem/blocker/AdminReceiver.kt", "w").write(admin_kt)
-open("app/src/main/java/com/chosem/blocker/BlockerService.kt", "w").write(service_kt)
-open("app/src/main/java/com/chosem/blocker/BlockActivity.kt", "w").write(block_kt)
-import setup2
