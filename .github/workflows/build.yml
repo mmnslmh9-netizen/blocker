@@ -40,7 +40,7 @@ jobs:
                   <activity
                       android:name=".BlockActivity"
                       android:exported="false"
-                      android:excludeFromRecents="true"
+                      :excludeFromRecents="true"
                       android:launchMode="singleTask" />
                   <service
                       android:name=".BlockerService"
@@ -57,6 +57,15 @@ jobs:
               </application>
           </manifest>"""
           open("app/src/main/AndroidManifest.xml", "w").write(manifest)
+
+          acc = f"""<?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="{u}"
+              android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"
+              android:canRetrieveWindowContent="true"
+              android:notificationTimeout="100" />"""
+          open("app/src/main/res/xml/accessibility_service_config.xml", "w").write(acc)
           '
           gradle assembleDebug
       - uses: actions/upload-artifact@v4
