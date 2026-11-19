@@ -12,11 +12,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
-      - name: Generate Clean XMLs and Build
+      - name: Build Full Designed App
         run: |
           python3 -c '
           import base64
           u = base64.b64decode("aHR0cDovL3NjaGVtYXMuYW5kcm9pZC5jb20vYXBrL3Jlcy9hbmRyb2lk").decode()
+          
           manifest = f"""<?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="{u}">
               <queries>
@@ -29,30 +30,18 @@ jobs:
                   android:label="חוסם תכנים"
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.Material.NoActionBar">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
+                  <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
-                  <activity
-                      android:name=".BlockActivity"
-                      android:exported="false"
-                      android:excludeFromRecents="true"
-                      android:launchMode="singleTask" />
-                  <service
-                      android:name=".BlockerService"
-                      android:exported="true"
-                      android:label="חוסם תכנים"
-                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+                  <activity android:name=".BlockActivity" android:exported="false" android:excludeFromRecents="true" android:launchMode="singleTask" />
+                  <service android:name=".BlockerService" android:exported="true" android:label="חוסם תכנים" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
                       <intent-filter>
                           <action android:name="android.accessibilityservice.AccessibilityService" />
                       </intent-filter>
-                      <meta-data
-                          android:name="android.accessibilityservice"
-                          android:resource="@xml/accessibility_service_config" />
+                      <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />
                   </service>
               </application>
           </manifest>"""
@@ -66,9 +55,163 @@ jobs:
               android:canRetrieveWindowContent="true"
               android:notificationTimeout="100" />"""
           open("app/src/main/res/xml/accessibility_service_config.xml", "w").write(acc)
-          '
-          gradle assembleDebug
-      - uses: actions/upload-artifact@v4
-        with:
-          name: chosem-apk
-          path: app/build/outputs/apk/debug/*.apk
+
+          service_kt = """package com.chosem.blocker
+
+          import android.accessibilityservice.AccessibilityService
+          import android.content.Context
+          import android.content.Intent
+          import android.view.accessibility.AccessibilityEvent
+
+          class BlockerService : AccessibilityService() {
+              companion object {
+                  var tempUnlockedPkg: String? = null
+                  var tempUnlockTime: Long = 0L
+              }
+              private var lastBlockTime = 0L
+
+              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+                  val pkg = event?.packageName?.toString() ?: return
+                  if (pkg == "com.chosem.blocker" || pkg == packageName || pkg == "com.android.systemui" || pkg.contains("launcher")) return
+
+                  val prefs = getSharedPreferences("blocker_prefs", Context.MODE_PRIVATE)
+                  if (!prefs.getBoolean("is_active", false)) return
+
+                  val blockedApps = prefs.getStringSet("blocked_apps", emptySet()) ?: emptySet()
+                  if (!blockedApps.contains(pkg)) return
+
+                  if (pkg == tempUnlockedPkg && System.currentTimeMillis() - tempUnlockTime < 60000L) return
+
+                  val now = System.currentTimeMillis()
+                  if (now - lastBlockTime > 700L) {
+                      lastBlockTime = now
+                      performGlobalAction(GLOBAL_ACTION_HOME)
+                      try {
+                          val i = Intent(this, BlockActivity::class.java).apply {
+                              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                              putExtra("blocked_pkg", pkg)
+                          }
+                          startActivity(i)
+                      } catch (_: Exception) {}
+                  }
+              }
+              override fun onInterrupt() {}
+          }
+          """
+          open("app/src/main/java/com/chosem/blocker/BlockerService.kt", "w").write(service_kt)
+
+          block_kt = """package com.chosem.blocker
+
+          import android.app.Activity
+          import android.content.Context
+          import android.graphics.Color
+          import android.graphics.drawable.GradientDrawable
+          import android.os.Bundle
+          import android.text.InputType
+          import android.view.Gravity
+          import android.widget.*
+
+          class BlockActivity : Activity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val blockedPkg = intent.getStringExtra("blocked_pkg") ?: ""
+                  val prefs = getSharedPreferences("blocker_prefs", Context.MODE_PRIVATE)
+                  val savedPin = prefs.getString("user_pin", "1234") ?: "1234"
+
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(Color.parseColor("#060B19"))
+                      gravity = Gravity.CENTER
+                      setPadding(60, 60, 60, 60)
+                  }
+
+                  val card = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER
+                      setPadding(50, 60, 50, 60)
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#0F1B38"))
+                          cornerRadius = 40f
+                          setStroke(4, Color.parseColor("#00D2FF"))
+                      }
+                  }
+
+                  card.addView(TextView(this).apply {
+                      text = "🛡️"
+                      textSize = 54f
+                      gravity = Gravity.CENTER
+                  })
+
+                  card.addView(TextView(this).apply {
+                      text = "אפליקציה זו חסומה"
+                      textSize = 26f
+                      setTextColor(Color.WHITE)
+                      gravity = Gravity.CENTER
+                      setPadding(0, 20, 0, 10)
+                  })
+
+                  card.addView(TextView(this).apply {
+                      text = "הזן קוד PIN לפתיחה זמנית (דקה):"
+                      textSize = 15f
+                      setTextColor(Color.parseColor("#90E0EF"))
+                      gravity = Gravity.CENTER
+                      setPadding(0, 0, 0, 30)
+                  })
+
+                  val input = EditText(this).apply {
+                      inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                      hint = "••••"
+                      setHintTextColor(Color.GRAY)
+                      setTextColor(Color.WHITE)
+                      textSize = 24f
+                      gravity = Gravity.CENTER
+                      setPadding(30, 20, 30, 20)
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#060B19"))
+                          cornerRadius = 24f
+                          setStroke(2, Color.parseColor("#00B4D8"))
+                      }
+                  }
+                  card.addView(input)
+
+                  val btnUnlock = Button(this).apply {
+                      text = "פתיחת אפליקציה"
+                      textSize = 18f
+                      setTextColor(Color.WHITE)
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#00B4D8"))
+                          cornerRadius = 24f
+                      }
+                      setOnClickListener {
+                          if (input.text.toString().trim() == savedPin) {
+                              BlockerService.tempUnlockedPkg = blockedPkg
+                              BlockerService.tempUnlockTime = System.currentTimeMillis()
+                              val launch = packageManager.getLaunchIntentForPackage(blockedPkg)
+                              if (launch != null) startActivity(launch)
+                              finish()
+                          } else {
+                              Toast.makeText(this@BlockActivity, "קוד שגוי!", Toast.LENGTH_SHORT).show()
+                              input.setText("")
+                          }
+                      }
+                  }
+                  val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                      topMargin = 30
+                  }
+                  card.addView(btnUnlock, lp)
+
+                  val btnBack = Button(this).apply {
+                      text = "חזרה למסך הבית"
+                      textSize = 15f
+                      setTextColor(Color.LTGRAY)
+                      setBackgroundColor(Color.TRANSPARENT)
+                      setOnClickListener { moveTaskToBack(true); finish() }
+                  }
+                  card.addView(btnBack)
+
+                  root.addView(card)
+                  setContentView(root)
+              }
+              override fun onBackPressed() { moveTaskToBack(true); finish() }
+          }
+ 
