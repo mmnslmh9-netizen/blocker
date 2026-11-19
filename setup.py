@@ -53,35 +53,35 @@ manifest = f'''<?xml version="1.0" encoding="utf-8"?>
 splash_kt = '''package com.chosem.blocker
 import android.app.Activity
 import android.content.Intent
-import android.graphics.Color
+import android.graphics.*
 import android.os.*
-import android.view.Gravity
-import android.widget.*
+import android.widget.ImageView
 
 class SplashActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        val resId = resources.getIdentifier("splash_img", "drawable", packageName)
-        if (resId != 0) {
-            val iv = ImageView(this).apply {
-                setImageResource(resId)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(Color.parseColor("#060B19"))
-            }
-            setContentView(iv)
-        } else {
-            val r = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setBackgroundColor(Color.parseColor("#060B19"))
-                gravity = Gravity.CENTER
-            }
-            r.addView(ImageView(this).apply { setImageResource(R.drawable.ic_launcher) }, LinearLayout.LayoutParams(320, 320))
-            setContentView(r)
+        val iv = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.parseColor("#060B19"))
         }
+        try {
+            val resId = resources.getIdentifier("splash_img", "drawable", packageName)
+            if (resId != 0) {
+                val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                val bmp = BitmapFactory.decodeResource(resources, resId, opts)
+                if (bmp != null) iv.setImageBitmap(bmp)
+                else iv.setImageResource(R.drawable.ic_launcher)
+            } else {
+                iv.setImageResource(R.drawable.ic_launcher)
+            }
+        } catch (_: Throwable) {
+            iv.setImageResource(R.drawable.ic_launcher)
+        }
+        setContentView(iv)
         Handler(Looper.getMainLooper()).postDelayed({
             startActivity(Intent(this, MainActivity::class.java))
             finish()
-        }, 1800)
+        }, 1600)
     }
 }'''
 
