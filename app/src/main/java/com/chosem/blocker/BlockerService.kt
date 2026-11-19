@@ -19,10 +19,7 @@ class BlockerService : AccessibilityService() {
 
         val blockedApps = prefs.getStringSet("blocked_apps", emptySet()) ?: emptySet()
 
-        val isSettingsAttempt = (pkg == "com.android.settings") &&
-                (event.text?.any { it.toString().contains("חוסם תכנים") || it.toString().contains("נגישות") || it.toString().contains("Accessibility") } == true)
-
-        if (blockedApps.contains(pkg) || isSettingsAttempt) {
+        if (blockedApps.contains(pkg)) {
             val now = System.currentTimeMillis()
             if (now - lastBlockTime > 600) {
                 lastBlockTime = now
