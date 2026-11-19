@@ -40,7 +40,7 @@ jobs:
                   <activity
                       android:name=".BlockActivity"
                       android:exported="false"
-                      :excludeFromRecents="true"
+                      android:excludeFromRecents="true"
                       android:launchMode="singleTask" />
                   <service
                       android:name=".BlockerService"
