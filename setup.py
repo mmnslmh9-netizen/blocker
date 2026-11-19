@@ -27,6 +27,12 @@ manifest = f'''<?xml version="1.0" encoding="utf-8"?>
             </intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />
         </service>
+        <receiver android:name=".AdminReceiver" android:exported="true" android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>'''
 
@@ -37,6 +43,17 @@ acc = f'''<?xml version="1.0" encoding="utf-8"?>
     android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"
     android:canRetrieveWindowContent="true"
     android:notificationTimeout="100" />'''
+
+admin_xml = f'''<?xml version="1.0" encoding="utf-8"?>
+<device-admin xmlns:android="{u}">
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
+</device-admin>'''
+
+admin_kt = '''package com.chosem.blocker
+import android.app.admin.DeviceAdminReceiver
+class AdminReceiver : DeviceAdminReceiver()'''
 
 service_kt = '''package com.chosem.blocker
 import android.accessibilityservice.AccessibilityService
@@ -55,16 +72,26 @@ class BlockerService : AccessibilityService() {
         if (p == "com.chosem.blocker" || p == packageName || p == "com.android.systemui" || p.contains("launcher")) return
         val pr = getSharedPreferences("blocker_prefs", 0)
         if (!pr.getBoolean("is_active", false)) return
+
+        val isProtectedSettings = (p == "com.android.settings" || p == "com.google.android.packageinstaller" || p == "com.samsung.android.packageinstaller") &&
+            (e.text?.any {
+                val s = it.toString()
+                s.contains("חוסם תכנים") || s.contains("מנהלי מכשיר") || s.contains("Device admin") || s.contains("יישומים מותקנים") || s.contains("Installed apps")
+            } == true)
+
         val blocked = pr.getStringSet("blocked_apps", emptySet()) ?: emptySet()
-        if (!blocked.contains(p)) return
-        if (p == uPkg && System.currentTimeMillis() - uTime < 60000L) return
+        if (!blocked.contains(p) && !isProtectedSettings) return
+
+        val target = if (isProtectedSettings) "settings_guard" else p
+        if (target == uPkg && System.currentTimeMillis() - uTime < 60000L) return
+
         if (System.currentTimeMillis() - last > 700L) {
             last = System.currentTimeMillis()
             performGlobalAction(GLOBAL_ACTION_HOME)
             try {
                 startActivity(Intent(this, BlockActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    putExtra("pkg", p)
+                    putExtra("pkg", target)
                 })
             } catch (_: Exception) {}
         }
@@ -103,7 +130,7 @@ class BlockActivity : Activity() {
             }
         }
         c.addView(TextView(this).apply {
-            text = "🛡️ אפליקציה נעולה"
+            text = if (pkg == "settings_guard") "🔒 הגדרות מוגנות" else "🛡️ אפליקציה נעולה"
             textSize = 25f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
@@ -125,7 +152,7 @@ class BlockActivity : Activity() {
         }
         c.addView(inp)
         c.addView(Button(this).apply {
-            text = "פתיחת אפליקציה"
+            text = "פתיחה"
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#00B4D8"))
@@ -135,7 +162,9 @@ class BlockActivity : Activity() {
                 if (inp.text.toString().trim() == pin) {
                     BlockerService.uPkg = pkg
                     BlockerService.uTime = System.currentTimeMillis()
-                    packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
+                    if (pkg != "settings_guard") {
+                        packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
+                    }
                     finish()
                 } else {
                     Toast.makeText(this@BlockActivity, "קוד שגוי", Toast.LENGTH_SHORT).show()
@@ -150,6 +179,8 @@ class BlockActivity : Activity() {
 
 open("app/src/main/AndroidManifest.xml", "w").write(manifest)
 open("app/src/main/res/xml/accessibility_service_config.xml", "w").write(acc)
+open("app/src/main/res/xml/device_admin.xml", "w").write(admin_xml)
+open("app/src/main/java/com/chosem/blocker/AdminReceiver.kt", "w").write(admin_kt)
 open("app/src/main/java/com/chosem/blocker/BlockerService.kt", "w").write(service_kt)
 open("app/src/main/java/com/chosem/blocker/BlockActivity.kt", "w").write(block_kt)
 import setup2
