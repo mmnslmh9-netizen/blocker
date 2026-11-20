@@ -2,9 +2,10 @@ import base64, os, shutil
 
 u = base64.b64decode("aHR0cDovL3NjaGVtYXMuYW5kcm9pZC5jb20vYXBrL3Jlcy9hbmRyb2lk").decode()
 os.makedirs("app/src/main/res/drawable", exist_ok=True)
+os.makedirs("app/src/main/assets", exist_ok=True)
 
 if os.path.exists("poster.jpg"):
-    shutil.copy("poster.jpg", "app/src/main/res/drawable/splash_img.jpg")
+    shutil.copy("poster.jpg", "app/src/main/assets/poster.jpg")
 
 icon_xml = f'''<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="{u}" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
@@ -65,14 +66,11 @@ class SplashActivity : Activity() {
             setBackgroundColor(Color.parseColor("#060B19"))
         }
         try {
-            val resId = resources.getIdentifier("splash_img", "drawable", packageName)
-            if (resId != 0) {
+            assets.open("poster.jpg").use { stream ->
                 val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-                val bmp = BitmapFactory.decodeResource(resources, resId, opts)
+                val bmp = BitmapFactory.decodeStream(stream, null, opts)
                 if (bmp != null) iv.setImageBitmap(bmp)
                 else iv.setImageResource(R.drawable.ic_launcher)
-            } else {
-                iv.setImageResource(R.drawable.ic_launcher)
             }
         } catch (_: Throwable) {
             iv.setImageResource(R.drawable.ic_launcher)
@@ -173,55 +171,24 @@ class BlockActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(50, 60, 50, 60)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#0F1B38"))
-                cornerRadius = 40f
-                setStroke(4, Color.parseColor("#00D2FF"))
+                setColor(Color.parseColor("#0F1B38")); cornerRadius = 40f; setStroke(4, Color.parseColor("#00D2FF"))
             }
         }
         c.addView(TextView(this).apply {
             text = if (pkg == "settings_guard") "🔒 הגדרות מוגנות" else "🛡️ אפליקציה נעולה"
-            textSize = 25f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
+            textSize = 25f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
         })
         c.addView(TextView(this).apply {
-            text = "הזן קוד PIN לפתיחה:"
-            textSize = 15f
-            setTextColor(Color.parseColor("#90E0EF"))
-            gravity = Gravity.CENTER
-            setPadding(0, 12, 0, 28)
+            text = "הזן קוד PIN לפתיחה:"; textSize = 15f; setTextColor(Color.parseColor("#90E0EF")); gravity = Gravity.CENTER; setPadding(0, 12, 0, 28)
         })
         val inp = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            hint = "••••"
-            setHintTextColor(Color.GRAY)
-            setTextColor(Color.WHITE)
-            textSize = 24f
-            gravity = Gravity.CENTER
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD; hint = "••••"; setHintTextColor(Color.GRAY); setTextColor(Color.WHITE); textSize = 24f; gravity = Gravity.CENTER
         }
         c.addView(inp)
         c.addView(Button(this).apply {
-            text = "פתיחה"
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#00B4D8"))
-                cornerRadius = 24f
-            }
-            setOnClickListener {
-                if (inp.text.toString().trim() == pin) {
-                    BlockerService.uPkg = pkg
-                    BlockerService.uTime = System.currentTimeMillis()
-                    if (pkg != "settings_guard") {
-                        packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
-                    }
-                    finish()
-                } else {
-                    Toast.makeText(this@BlockActivity, "קוד שגוי", Toast.LENGTH_SHORT).show()
-                }
-            }
+            text = "פתיחה"; setTextColor(Color.WHITE); background = GradientDrawable().apply { setColor(Color.parseColor("#00B4D8")); cornerRadius = 24f }; setOnClickListener { if (inp.text.toString().trim() == pin) { BlockerService.uPkg = pkg; BlockerService.uTime = System.currentTimeMillis(); if (pkg != "settings_guard") { packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) } }; finish() } else { Toast.makeText(this@BlockActivity, "קוד שגוי", Toast.LENGTH_SHORT).show() } }
         })
-        r.addView(c)
-        setContentView(r)
+        r.addView(c); setContentView(r)
     }
     override fun onBackPressed() { moveTaskToBack(true); finish() }
 }'''
@@ -230,3 +197,8 @@ open("app/src/main/res/drawable/ic_launcher.xml", "w").write(icon_xml)
 open("app/src/main/AndroidManifest.xml", "w").write(manifest)
 open("app/src/main/res/xml/accessibility_service_config.xml", "w").write(acc)
 open("app/src/main/res/xml/device_admin.xml", "w").write(admin_xml)
+open("app/src/main/java/com/chosem/blocker/SplashActivity.kt", "w").write(splash_kt)
+open("app/src/main/java/com/chosem/blocker/AdminReceiver.kt", "w").write(admin_kt)
+open("app/src/main/java/com/chosem/blocker/BlockerService.kt", "w").write(service_kt)
+open("app/src/main/java/com/chosem/blocker/BlockActivity.kt", "w").write(block_kt)
+import setup2
