@@ -1,5 +1,6 @@
 main_kt = '''package com.chosem.blocker
 import android.app.*
+import android.app.admin.DevicePolicyManager
 import android.content.*
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -13,10 +14,15 @@ import android.widget.*
 class MainActivity : Activity() {
     private lateinit var pr: SharedPreferences
     private val sel = mutableSetOf<String>()
+    private lateinit var dpm: DevicePolicyManager
+    private lateinit var comp: ComponentName
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         pr = getSharedPreferences("blocker_prefs", 0)
+        dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        comp = ComponentName(this, AdminReceiver::class.java)
+        
         val saved = pr.getStringSet("blocked_apps", emptySet()) ?: emptySet()
         sel.addAll(saved.filter { it != "com.chosem.blocker" && it != packageName })
         pr.edit().putStringSet("blocked_apps", sel.toSet()).apply()
@@ -84,19 +90,45 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, on -> pr.edit().putBoolean("is_active", on).apply() }
         })
         r.addView(h)
-        r.addView(Button(this).apply {
-            text = "⚙️ הפעלת שירות חסימה בהגדרות"
+
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 18, 0, 0)
+        }
+        btnRow.addView(Button(this).apply {
+            text = "⚙️ שירות נגישות"
+            textSize = 13f
             setTextColor(Color.WHITE)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#0077B6"))
-                cornerRadius = 24f
-            }
+            background = GradientDrawable().apply { setColor(Color.parseColor("#0077B6")); cornerRadius = 24f }
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 20 })
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = 8 })
+
+        val isAdminActive = dpm.isAdminActive(comp)
+        btnRow.addView(Button(this).apply {
+            text = if (isAdminActive) "🔒 הגנה פעילה" else "🔒 מניעת מחיקה"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { 
+                setColor(Color.parseColor(if (isAdminActive) "#10B981" else "#0284C7"))
+                cornerRadius = 24f 
+            }
+            setOnClickListener {
+                if (!dpm.isAdminActive(comp)) {
+                    val i = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, comp)
+                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "חובה להפעיל כדי למנוע את מחיקת האפליקציה ללא קוד.")
+                    }
+                    startActivity(i)
+                } else {
+                    Toast.makeText(this@MainActivity, "ההגנה מפני מחיקה כבר פעילה!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        r.addView(btnRow)
 
         val cr = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 20, 0, 16)
+            setPadding(0, 18, 0, 16)
         }
         val pm = packageManager
         val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
