@@ -1,188 +1,206 @@
-main_kt = '''package com.chosem.blocker
-import android.app.*
-import android.app.admin.DevicePolicyManager
+import base64, os, shutil
+
+u = base64.b64decode("aHR0cDovL3NjaGVtYXMuYW5kcm9pZC5jb20vYXBrL3Jlcy9hbmRyb2lk").decode()
+os.makedirs("app/src/main/res/drawable", exist_ok=True)
+os.makedirs("app/src/main/res/xml", exist_ok=True)
+os.makedirs("app/src/main/assets", exist_ok=True)
+
+if os.path.exists("poster.jpg"):
+    shutil.copy("poster.jpg", "app/src/main/assets/poster.jpg")
+
+icon_xml = f'''<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="{u}" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#060B19" android:pathData="M0,0h108v108h-108z"/>
+    <path android:fillColor="#003566" android:strokeColor="#00D2FF" android:strokeWidth="3.5" android:pathData="M54,18 L82,30 V54 C82,73 69,86 54,92 C39,86 26,73 26,54 V30 Z"/>
+    <path android:fillColor="#0077B6" android:pathData="M54,24 L76,34 V54 C76,69 65,80 54,85 C43,80 32,69 32,54 V34 Z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M54,43 A6,6 0 1,0 54,55 A6,6 0 1,0 54,43 Z M50,53 L58,53 L60,67 L48,67 Z"/>
+</vector>'''
+
+manifest = f'''<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="{u}">
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+    <application
+        android:icon="@drawable/ic_launcher"
+        android:label="חוסם תכנים"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity android:name=".SplashActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".MainActivity" android:exported="true" />
+        <activity android:name=".BlockActivity" android:exported="false" android:excludeFromRecents="true" android:launchMode="singleTask" />
+        <service android:name=".BlockerService" android:exported="true" android:label="חוסם תכנים" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />
+        </service>
+        <receiver android:name=".AdminReceiver" android:exported="true" android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>'''
+
+splash_kt = '''package com.chosem.blocker
+import android.app.Activity
+import android.content.Intent
+import android.graphics.*
+import android.os.*
+import android.widget.ImageView
+
+class SplashActivity : Activity() {
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        val iv = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.parseColor("#060B19"))
+        }
+        try {
+            assets.open("poster.jpg").use { stream ->
+                val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                val bmp = BitmapFactory.decodeStream(stream, null, opts)
+                if (bmp != null) iv.setImageBitmap(bmp)
+                else iv.setImageResource(R.drawable.ic_launcher)
+            }
+        } catch (_: Throwable) {
+            iv.setImageResource(R.drawable.ic_launcher)
+        }
+        setContentView(iv)
+        Handler(Looper.getMainLooper()).postDelayed({
+            startActivity(Intent(this, MainActivity::class.java))
+            finish()
+        }, 1600)
+    }
+}'''
+
+acc = f'''<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="{u}"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="100" />'''
+
+admin_xml = f'''<?xml version="1.0" encoding="utf-8"?>
+<device-admin xmlns:android="{u}">
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
+</device-admin>'''
+
+admin_kt = '''package com.chosem.blocker
+import android.app.admin.DeviceAdminReceiver
+class AdminReceiver : DeviceAdminReceiver()'''
+
+service_kt = '''package com.chosem.blocker
+import android.accessibilityservice.AccessibilityService
 import android.content.*
-import android.content.pm.PackageManager
-import android.graphics.Color
+import android.view.accessibility.AccessibilityEvent
+
+class BlockerService : AccessibilityService() {
+    companion object {
+        var uPkg: String? = null
+        var uTime = 0L
+    }
+    private var last = 0L
+
+    override fun onAccessibilityEvent(e: AccessibilityEvent?) {
+        val p = e?.packageName?.toString() ?: return
+        if (p == "com.chosem.blocker" || p == packageName || p == "com.android.systemui" || p.contains("launcher")) return
+        val pr = getSharedPreferences("blocker_prefs", 0)
+        if (!pr.getBoolean("is_active", false)) return
+
+        val isProtectedSettings = (p == "com.android.settings" || p == "com.google.android.packageinstaller" || p == "com.samsung.android.packageinstaller") &&
+            (e.text?.any {
+                val s = it.toString()
+                s.contains("חוסם תכנים") || s.contains("מנהלי מכשיר") || s.contains("Device admin") || s.contains("יישומים מותקנים") || s.contains("Installed apps")
+            } == true)
+
+        val blocked = pr.getStringSet("blocked_apps", emptySet()) ?: emptySet()
+        if (!blocked.contains(p) && !isProtectedSettings) return
+
+        val target = if (isProtectedSettings) "settings_guard" else p
+        if (target == uPkg && System.currentTimeMillis() - uTime < 60000L) return
+
+        if (System.currentTimeMillis() - last > 700L) {
+            last = System.currentTimeMillis()
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            try {
+                startActivity(Intent(this, BlockActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    putExtra("pkg", target)
+                })
+            } catch (_: Exception) {}
+        }
+    }
+    override fun onInterrupt() {}
+}'''
+
+block_kt = '''package com.chosem.blocker
+import android.app.Activity
+import android.content.Context
+import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
 import android.widget.*
 
-class MainActivity : Activity() {
-    private lateinit var pr: SharedPreferences
-    private val sel = mutableSetOf<String>()
-    private lateinit var dpm: DevicePolicyManager
-    private lateinit var comp: ComponentName
-
+class BlockActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        pr = getSharedPreferences("blocker_prefs", 0)
-        dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        comp = ComponentName(this, AdminReceiver::class.java)
-        
-        val saved = pr.getStringSet("blocked_apps", emptySet()) ?: emptySet()
-        sel.addAll(saved.filter { it != "com.chosem.blocker" && it != packageName })
-        pr.edit().putStringSet("blocked_apps", sel.toSet()).apply()
-        ask()
-    }
-
-    private fun ask() {
-        val sp = pr.getString("user_pin", null)
-        val inp = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            hint = if (sp == null) "בחר קוד חדש (4 ספרות)" else "הזן קוד PIN"
-            gravity = Gravity.CENTER
-            textSize = 22f
-        }
-        AlertDialog.Builder(this)
-            .setTitle(if (sp == null) "🛡️ הגדרת קוד נעילה" else "🛡️ חוסם תכנים")
-            .setView(inp)
-            .setCancelable(false)
-            .setPositiveButton("כניסה") { _, _ ->
-                val c = inp.text.toString().trim()
-                if (sp == null && c.length >= 4) {
-                    pr.edit().putString("user_pin", c).apply()
-                    ui()
-                } else if (c == sp) {
-                    ui()
-                } else {
-                    Toast.makeText(this, "קוד שגוי", Toast.LENGTH_SHORT).show()
-                    ask()
-                }
-            }
-            .setNegativeButton("יציאה") { _, _ -> finish() }
-            .show()
-    }
-
-    private fun bg(s: String = "#1D3557") = GradientDrawable().apply {
-        setColor(Color.parseColor("#0F1B38"))
-        cornerRadius = 32f
-        setStroke(3, Color.parseColor(s))
-    }
-
-    private fun ui() {
+        val pkg = intent.getStringExtra("pkg") ?: ""
+        val pin = getSharedPreferences("blocker_prefs", 0).getString("user_pin", "1234") ?: "1234"
         val r = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#060B19"))
-            setPadding(36, 40, 36, 24)
+            gravity = Gravity.CENTER
+            setPadding(60, 60, 60, 60)
         }
-        val h = LinearLayout(this).apply {
+        val c = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(30, 36, 30, 36)
-            background = bg("#00D2FF")
+            setPadding(50, 60, 50, 60)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#0F1B38")); cornerRadius = 40f; setStroke(4, Color.parseColor("#00D2FF"))
+            }
         }
-        h.addView(TextView(this).apply {
-            text = "🛡️ חוסם תכנים"
-            textSize = 28f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
+        c.addView(TextView(this).apply {
+            text = if (pkg == "settings_guard") "🔒 הגדרות מוגנות" else "🛡️ אבטחת אפליקציה"
+            textSize = 25f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
         })
-        h.addView(Switch(this).apply {
-            text = "חסימה פעילה"
-            textSize = 20f
-            setTextColor(Color.parseColor("#4ADE80"))
-            isChecked = pr.getBoolean("is_active", false)
-            setPadding(0, 20, 0, 0)
-            setOnCheckedChangeListener { _, on -> pr.edit().putBoolean("is_active", on).apply() }
+        c.addView(TextView(this).apply {
+            text = "הזן קוד PIN להמשך:"; textSize = 15f; setTextColor(Color.parseColor("#90E0EF")); gravity = Gravity.CENTER; setPadding(0, 12, 0, 28)
         })
-        r.addView(h)
-
-        val btnRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 18, 0, 0)
+        val inp = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD; hint = "••••"; setHintTextColor(Color.GRAY); setTextColor(Color.WHITE); textSize = 24f; gravity = Gravity.CENTER
         }
-        btnRow.addView(Button(this).apply {
-            text = "⚙️ שירות נגישות"
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply { setColor(Color.parseColor("#0077B6")); cornerRadius = 24f }
-            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = 8 })
-
-        val isAdminActive = dpm.isAdminActive(comp)
-        btnRow.addView(Button(this).apply {
-            text = if (isAdminActive) "🔒 הגנה פעילה ✓" else "🔒 מניעת מחיקה"
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply { 
-                setColor(Color.parseColor(if (isAdminActive) "#10B981" else "#0284C7"))
-                cornerRadius = 24f 
-            }
-            setOnClickListener {
-                if (!dpm.isAdminActive(comp)) {
-                    val i = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, comp)
-                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "חובה להפעיל כדי למנוע את מחיקת האפליקציה ללא קוד.")
-                    }
-                    startActivity(i)
-                } else {
-                    Toast.makeText(this@MainActivity, "ההגנה מפני מחיקה כבר פעילה!", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        r.addView(btnRow)
-
-        val cr = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 18, 0, 16)
-        }
-        val pm = packageManager
-        val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            .filter { pm.getLaunchIntentForPackage(it.packageName) != null && it.packageName != "com.chosem.blocker" && it.packageName != packageName }
-            .sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
-
-        fun cb(t: String, col: String, f: () -> Unit) = Button(this).apply {
-            text = t
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply { setColor(Color.parseColor(col)); cornerRadius = 20f }
-            setOnClickListener { f(); ui() }
-        }
-        cr.addView(cb("📱 רשתות", "#1E293B") {
-            val s = listOf("tiktok", "musically", "instagram", "facebook", "telegram", "snapchat")
-            apps.filter { a -> s.any { a.packageName.contains(it, true) } }.forEach { sel.add(it.packageName) }
-            pr.edit().putStringSet("blocked_apps", sel.toSet()).apply()
-        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = 8 })
-
-        cr.addView(cb("🌐 דפדפנים", "#1E293B") {
-            val b = listOf("chrome", "browser", "opera", "firefox", "brave")
-            apps.filter { a -> b.any { a.packageName.contains(it, true) } }.forEach { sel.add(it.packageName) }
-            pr.edit().putStringSet("blocked_apps", sel.toSet()).apply()
-        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = 8 })
-
-        cr.addView(cb("🧹 נקה הכל", "#7F1D1D") {
-            sel.clear()
-            pr.edit().putStringSet("blocked_apps", emptySet()).apply()
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        r.addView(cr)
-
-        val sc = ScrollView(this)
-        val l = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        for (a in apps) {
-            val row = LinearLayout(this).apply {
-                setPadding(24, 18, 24, 18)
-                background = bg()
-            }
-            row.addView(CheckBox(this).apply {
-                text = "  " + pm.getApplicationLabel(a)
-                setTextColor(Color.WHITE)
-                textSize = 16f
-                isChecked = sel.contains(a.packageName)
-                setOnCheckedChangeListener { _, c ->
-                    if (c) sel.add(a.packageName) else sel.remove(a.packageName)
-                    pr.edit().putStringSet("blocked_apps", sel.toSet()).apply()
-                }
-            })
-            l.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 12 })
-        }
-        sc.addView(l)
-        r.addView(sc)
-        setContentView(r)
+        c.addView(inp)
+        c.addView(Button(this).apply {
+            text = "פתיחה"; setTextColor(Color.WHITE); background = GradientDrawable().apply { setColor(Color.parseColor("#00B4D8")); cornerRadius = 24f }; setOnClickListener { if (inp.text.toString().trim() == pin) { BlockerService.uPkg = pkg; BlockerService.uTime = System.currentTimeMillis(); if (pkg != "settings_guard") { packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) } }; finish() } else { Toast.makeText(this@BlockActivity, "קוד שגוי", Toast.LENGTH_SHORT).show() } }
+        })
+        r.addView(c); setContentView(r)
     }
+    override fun onBackPressed() { moveTaskToBack(true); finish() }
 }'''
 
-open("app/src/main/java/com/chosem/blocker/MainActivity.kt", "w").write(main_kt)
+open("app/src/main/res/drawable/ic_launcher.xml", "w").write(icon_xml)
+open("app/src/main/AndroidManifest.xml", "w").write(manifest)
+open("app/src/main/res/xml/accessibility_service_config.xml", "w").write(acc)
+open("app/src/main/res/xml/device_admin.xml", "w").write(admin_xml)
+open("app/src/main/java/com/chosem/blocker/SplashActivity.kt", "w").write(splash_kt)
+open("app/src/main/java/com/chosem/blocker/AdminReceiver.kt", "w").write(admin_kt)
+open("app/src/main/java/com/chosem/blocker/BlockerService.kt", "w").write(service_kt)
+open("app/src/main/java/com/chosem/blocker/BlockActivity.kt", "w").write(block_kt)
+import setup2
